@@ -1,0 +1,628 @@
+---
+title: "Assignment 2, Spring 2021"
+author: "Vladyslav Petrenko"
+date: "02/19/2021"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Don't change the line below
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, 
+                      message=FALSE, fig.width=6, fig.align="center")
+# If you are using other packages, load them here. 
+# If you don't have the following packages installed,
+# please install them first. But don't include the installation
+# code here because every time you knit this document they'll 
+# be reinstalled which is not necessary!
+library(Matching)
+library(knitr)
+library(janitor)
+library(tidyverse)
+library(arm)
+library(ggplot2)
+library(caret)
+library(ROCR)
+library(readr)
+library(caTools)
+library(tidyverse)
+#library(data.table)
+# we need to set the seed of R's random number generator, 
+# in order to produce comparable results 
+set.seed(928)
+```
+
+# A few important notes
+
+**Option 1 for submitting your assignment**: *This method is actually preferred. This is an RMarkdown document. Did you know you can open this document in RStudio, edit it by adding your answers and code, and then knit it to a pdf? To submit your answers to this assignment, simply knit this file as a pdf and submit it as a pdf on Forum. All of your code must be included in the resulting pdf file, i.e., don't set echo = FALSE in any of your code chunks. [This](https://rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf) is a cheat sheet for using Rmarkdown. If you have questions about RMarkdown, please post them on Piazza. Try knitting this document in your RStudio. You should be able to get a pdf file. At any step, you can try knitting the document and recreate a pdf. If you get an error, you might have incomplete code.*
+
+**Option 2 for submitting your assignment**: *If you are not comfortable with RMarkdown, you can also choose the Google Doc version of this assignment, make a copy of it and edit the Google doc (include your code, figures, results, and explanations) and at the end download your Google Doc as a pdf and submit the pdf file.*
+
+**Note**: *Either way (if you use Rmd and knit as pdf OR if you use Google Doc and download as pdf) you should make sure you put your name on top of the document.*
+
+**Note**: *The first time you run this document you may get an error that some packages don't exist. If you don't have the packages listed on top of this document, install them first and you won't get those errors.*
+
+**Note**: *Don't change seed in the document. The function `set.seed()` has already been set at the beginning of this document to 928. Changing the see again to a different number will make your results not replicable.*
+
+
+## QUESTION 1: Data Generating Example
+
+#### STEP 1
+
+Create a set of 1000 outcome observations using a data-generating process (DGP) that incorporates two variables and a stochastic component (of your choice). In other words, create two independent variables, a vector of noise, and a dependent variable (outcome) that relates to the independent variables and the noise with a formula you choose.
+
+```{r}
+# Your code here
+invested_amt <- sample(c(1000:10000), 1000, replace = TRUE)
+dividends <- sample(c(100:1000), 1000, replace = TRUE)
+
+total <- invested_amt*1.07 + 0.8*dividends + rnorm(1000)
+
+```
+
+
+#### STEP 2
+
+Tell a 2-3 sentence story about the data generating process you coded up above. What is it about and what each component means?
+
+**The data shows the total investment revenue of individuals assuming that they will check their portfolio performance after a year since they started investing. The first independent variable (a deterministic component of the model) is the initially invested amount in year 0, which is a discrete variable in the context of this problem. The second independent variable of the model is the value of dividends an investor gets from the stocks/bonds. The dependent variable of the model is revenue — the total amount of money individuals make from investing under assumptions of annual 7% market growth and annual dividends (there is a coefficient of 0.8 due to the 20% taxation of the earnings). The stochastic component includes values drawn randomly from the normal distribution with a mean equal to 0 and standard deviation equal to 1.**
+
+#### STEP 3
+
+Fit a regression model of the outcome on the two independent variables and see if the coefficients you find are similar to the ones in your DGP. 
+
+```{r}
+# All coefficients make sense and are very close to the true values
+# identified in the formula of the model. The simplicity of the model 
+# seems to be the main reason for great regression model performance.
+reg_model <- lm(total~invested_amt+dividends)
+print(reg_model$coefficients)
+```
+
+#### STEP 4
+
+Use the simulation-based approach covered in class (the arm library, etc.) to find the computational 95% confidence interval of your coefficients and report them here. Set the number of simulations to 10,000.
+
+```{r}
+# 
+sim_results <- sim(reg_model, n.sims = 10000)
+# take 95% confidence interval of each coefficient
+intercept_sim <- quantile(sim_results@coef[,1], probs = c(0.025, 0.975))
+invested_amt_sim <- quantile(sim_results@coef[,2], probs = c(0.025, 0.975))
+dividends_sim <- quantile(sim_results@coef[,3], probs = c(0.025, 0.975))
+print(intercept_sim)
+print(invested_amt_sim)
+print(dividends_sim)
+```
+**We are 95% confident that the intercept coefficient is between -0.32774198 and 0.06482209, the invested amount coefficient is between 1.069989 and 1.070036 and the dividends coefficient is between 0.7997955 and 0.8002652.**
+
+#### STEP 5
+
+Now, estimate the 95% confidence interval for the predicted outcome when your first variable is equal to 1 and the second variable is equal to -2 using the simulated coefficients you found in Step 4. 
+
+```{r}
+# create an empty vector that will store all predicted outcomes from 
+# simulated coefficients
+profits <- c()
+
+# iterate through all sets of coefficients and calculate the predicted
+# outcome given x1 = 1 and x2 = -2
+for(i in 1:length(sim_results@coef[,1])){
+
+  profits[i] <- sim_results@coef[i,1] + 1*sim_results@coef[i,2] -2 * sim_results@coef[i,3]
+}
+
+# I do not think that the confidence interval makes sense for the given
+# values of the first and second variable in the context of this model.
+# After simulating the results, we can see that all values are negative
+# because the first coefficient is smaller than -2 multiplied by the
+# second coefficient. Thus, it is difficult to conclude anything about
+# the predicted outcome after performing this procedure because dividends
+# cannot be negative or bigger than the invested amount after one year. 
+
+outcome <- quantile(profits, probs = c(0.025, 0.975))
+outcome
+```
+
+
+## QUESTION 2: Outliers
+
+Imagine that you want to create a data visualization that illustrates the sensitivity of regression to outlier data points. So, you want to create two figures:
+
+One figure that shows a regression line fit to a 2-dimensional (x and y) scatterplot, such that the regression line clearly has a negative slope.
+
+```{r}
+# Your code here!
+# sample of 20 cars of age between 1 and 50 years
+car_age <- sample(c(1:50), 20, replace=TRUE)
+# how much value each car has lost
+depreciation <- car_age * 300*round(runif(20, -1, -0.1), 2)
+df = data.frame(car_age, depreciation)
+
+ggplot(df, aes(car_age, depreciation)) +
+  geom_point() +
+  theme_minimal() +
+  geom_smooth(method = "lm") +
+  ggtitle("Depreciation of cars with time") +
+  labs(y= "Depreciated value($)", x = "Car age(years)")
+
+
+```
+
+And, another figure that shows a regression line with a positive slope fit to a scatter plot of the same data plus one additional outlier data point. This one data point is what changes the sign of the regression line’s slope from negative to positive.
+
+```{r}
+# add an outlier (car that is 49 years old and has gained 50000 in value)
+df[nrow(df) + 1,] = c(49,50000)
+
+ggplot(df, aes(car_age, depreciation)) +
+  geom_point() +
+  theme_minimal() +
+  geom_smooth(method = "lm") +
+  ggtitle("Depreciation of cars with time(incl. an outlier)") +
+  labs(y= "Depreciated value($)", x = "Car age(years)")
+```
+
+Be sure to label the axes and the title the figures appropriately. Include a brief paragraph that explains the number of observations and how you created the data set and the outlier.
+
+**I decided to create a dataset of cars that contains two variables — car age (measured in years) and how much each car has depreciated compared to its original price (measured in $). I hypothesized that generic cars tend to lose their value quickly. Thus, the older the car, the less value it has on the market (can be seen in the formula for the "depreciation" variable). However, this statement does not apply to cars that are older than a certain number of years (e.g., ancient cars of specific models that are considered antiques or modern cars that were made in limited quantities). Thus, the second figure shows the previously mentioned dataset with an additional entry of a car that is 49 years old and has gained value a change in slopes of the corresponding regression lines. I think such a change is likely to happen when the dataset is small, and each entry has a significant influence on the regression coefficients. If we create the same dataset with more observations (e.g., 100 or 1000), one outlier will not change the regression line's slope.**
+
+## QUESTION 3: Simulation methods
+
+You were hired by the local animal shelter at Austin, Texas to perform some data analysis. They are particularly interested in predicting how long an animal stays in a shelter given the information they have upon shelter admission. To focus on your task, you’ll be only looking at dogs.
+
+They identified the following variables as relevant to the prediction:
+
+- `Intake Type`: dogs can come into the shelter in multiple ways. They are interested in differentiating between three main ones: *strays* (most common: animals found without an owner by animal control), *owner surrenders* (animals brought to the shelter by their owners for various reasons), and *public assistance* (animals surrender by a person who is not their owner). The other type of intake is euthanasa request (made by the owner), which you should ignore. 
+
+- `Intake Condition`: there are three conditions the shelter wants to mark — dogs identified as *Injured*, *Sick*, and *Nursing/Pregnant*. There are other conditions inserted in this field, but for dogs, they are not common. 
+
+- `Age` (use `age_upon_intake_years`): how old was the dog, in years, when arriving at the shelter. 
+
+- `Breed`: this is a fairly unreliable field, since people are not always successful at identifying the actual genetic breed of a dog. Nevertheless, you should try to look at a crude division: those identified as purebred compared to mixed breeds.
+
+The variable containing the length of day, which you want to predict, is `time_in_shelter_days`. 
+
+#### STEP 1
+
+Download the dataset from [here](https://www.kaggle.com/aaronschlegel/austin-animal-center-shelter-intakes-and-outcomes?select=aac_intakes_outcomes.csv). Make sure you use `aac_intakes_outcomes.csv` which contains the joint intake and outcome data for all animals.
+
+Then, perform the necessary preprocessing to be able to fit the model as required:
+
+1. Remove `NA`s or empty entries in the fields you will need to use. 
+2. Remove all entries except for dogs.
+3. Use the `janitor` package and the `clean_names` function to convert all column names to all lowercase and replace spaces with underlines. The package is already loaded above but you should install it first if you don't have it.
+4. Remove rows with the *Euthanasia Request* intake type. Make sure your `intake_type` column used for the model is a factor, so R will know to fit different coefficients for each condition (or alternatively, create dummy variables for each of the three yourself).
+5. Create a new `intake_condition` feature that satisfies the shelter’s interests: dogs marked *normal*, *injured* and *sick* should have these values, but *nursing* and *pregnant* should be unified into a joint value (call it what you want) and all other values should be grouped under *other*. 
+
+```{r}
+# read the data
+data <- read.csv("C:\\Users\\Vladyslav\\Documents\\aac_intakes_outcomes.csv", header = TRUE)
+
+# remove unnecessary columns ("sex_upon_intake" and "outcome type" are
+# not manipulated in this step, but will be useful later)
+keep <- c("intake_type", "intake_condition", "age_upon_intake_.years.", "breed", "time_in_shelter_days", "sex_upon_intake", "outcome_type", "animal_type")
+modified <- data[keep]
+
+cols = c(1,2,3,4,5,6,7,8)
+
+# iterate through all columns and entries setting empty values as NA
+for(i in cols){
+  missing <- which(as.character(modified[, i]) == "")
+  
+  modified[missing, i] <- NA
+  
+}
+
+# check for NA values and remove them (there is none in this dataframe)
+# double-checked by applying is.na() to every column
+print("Checking the number of NA values")
+apply(is.na(modified),2,which)
+
+# the algorithm found 6524 NA values in "sex_upon_intake" (used in
+# question 5) and a few NA values in "outcome_type", thus, we will 
+# remove them
+which.have.NAs <- which(is.na(modified$sex_upon_intake == TRUE))
+
+modified <- modified[-which.have.NAs, ]
+modified <- modified[-which(is.na(modified$outcome_type == TRUE)),]
+
+# remove all entries except for dogs
+modified <- modified[modified$animal_type == "Dog",]
+
+# convert all column names to all lowercase and replace spaces with
+# underlines
+modified <- clean_names(modified)
+
+# remove rows with the *Euthanasia Request* intake type
+modified <- modified[-which(modified$intake_type=="Euthanasia Request"),]
+
+# convert the column to a factor
+modified$intake_type <- as.factor(modified$intake_type)
+
+# duplicate existing "intake_condition column" and add it to the data
+# frame
+new_intake_condition <- modified$intake_condition
+modified["new_intake_condition"] <- new_intake_condition
+
+# change "new_intake_condition" features to satisfy shelter interests
+for(i in 1:length(modified$intake_condition)){
+  if(modified$intake_condition[i] == "Normal"| modified$intake_condition[i] == "Sick" | modified$intake_condition[i] == "Injured" ){
+    next
+  }
+  else if(modified$intake_condition[i] == "Nursing"| modified$intake_condition[i] == "Pregnant"){
+    modified$new_intake_condition[i] <- "NurPre"
+  }
+  else{
+    modified$new_intake_condition[i] <- "Other"
+  }
+  
+  
+}
+```
+
+#### STEP 2
+
+Run a linear regression that models `time_in_shelter_days` as a function of `intake_type`, `intake_condition_new` (created in Step 1), and `age_upon_intake_years`. 
+
+```{r}
+# To run a linear regression successfully, we first need to make sure
+# that we deal with predictors that have more than 2 levels. We have 2
+# columns that need transformation — "intake_type" and
+# "new_intake_condition". We will use a method called one-hot encoding
+# that will help us to recode categorical variables and achieve
+# meaningful results. The idea consists of converting a categorical
+# variable with multiple levels (values) into multiple binary variables
+# (0 if the entry does not have a variable, 1 if it does).
+
+# create a dataset with 2 columns that need to be modified
+onehot <- modified[-c(2:8)]
+
+# create dummy variables for each column
+dummy <- dummyVars(" ~ .", data=onehot)
+
+# perform one-hot encoding
+new <- data.frame(predict(dummy, newdata = onehot))
+
+# add newly obtained columns to the existing dataset
+new2 <- cbind(modified, new)
+
+new2 <- clean_names(new2)
+
+# perform multiple linear regression on all columns of interest
+lm1 <- lm(time_in_shelter_days ~ intake_type_owner_surrender + intake_type_public_assist + intake_type_stray + new_intake_condition_injured + new_intake_condition_normal + new_intake_condition_nur_pre + new_intake_condition_other + age_upon_intake_years +0, data = new2)
+summary(lm1)
+```
+
+#### STEP 3
+
+Report coefficients and R-squared. Which coefficients are statistically significant? Interpret what they mean in terms of the feature they are associated with and the outcome.
+
+**Looking at the summary, we can conclude that coefficients of "intake_type.Owner.Surrender", "new_intake_condition_injured", "new_intake_condition_nur_pre" and "age_upon_intake_years" are statistically significant. This might be proved by very low p-values. Coefficients of all binary variables can be interpreted in the following way: for instance, if the dog's intake condition is "Injured," this will increase in its mean time spent in the shelter by 11.36622 days while holding other predictors in the model constant. For age upon intake, it means that an increase in age by one unit results in an increase in its mean time spent in the shelter by 0.53230 days while holding other predictors in the model constant. We can also notice one coefficient with NA values. According to the information available about summary(), it might mean that the variable in question ("intake_type_stray" in this case) is linearly related to the other variables. Adding +0 or -1 to the lm() function could be a feasible solution to the identified issue because the algorithm will take all necessary information from the intercept and reassign it to the NA variable ("intake_type_stray" obtained the same values as the intercept would have if +0 was not included into the regression formula). It is an important change because "intake_type_stray" is used in the next step and cannot be omitted. R-squared tells us that approximately 12% of the variation in "time_in_shelter_days" can be explained by the model, which is a relatively small value and makes the model not very useful.**
+
+Then calculate R-squared by hand (as in, computing the quantities that make up R-squared rather than using the built-in one) and show that you get the same or nearly the same answer as the summary `lm` command.
+
+Write out hand calculations here.
+**Since the dataset contains a lot of entries, it is difficult to perform calculations by hand. Thus, we provide a general procedure of finding R-squared without functions that do this directly.**
+
+**The algorithm is the following:**
+**1. Define actual and predicted values**
+     actual <- new2$time_in_shelter_days
+     predicted <- predict(lm1, data = new2)
+**2. Obtain the residual sum of squares**
+     residual_ss <- sum((predicted-actual)^2)
+**3. Obtain the residual sum of squares**
+     total_ss <- sum(actual-mean(actual))^2)
+**4. Divide the residual sum of squares by total sum of squares and subtract the result from one**
+     1 - (residual_ss/total_ss) gives ~0.1194, which is the same as the Multiple R-Squared value from the summary() command.
+
+
+#### STEP 4
+
+The shelter is specifically interested in the effect of age upon intake on the length of stay. Set all predictors at the following values: `intake type` = stray and `intake_condition` = normal. Use them to create a data visualization that shows the 95% confidence interval of the expected values of `time_in_shelter_days` as `age_upon_intake_years` varies between the following values: 0.1, 0.5, 1, 2, 3, 5, 7, 10, 12, 15, 18, 20.  
+
+Follow this procedure using a simulation-based approach:
+
+1. Generate 1,000 sets of coefficients from your regression model.
+2. Generate 1,000 predictions with each value of `age`.
+3. Obtain 95% confidence intervals from these predictions. 
+4. Plot your results.
+
+Be sure to include axes labels and figure titles.
+
+```{r}
+# Given that we applied the one-hot procedure to obtain meaningful
+# results in the regression model in the previous step, we need to 
+# remain consistent and fill the entire columns "intake_type_stray 
+# and "intake_condition_normal" with ones while keeping the rest of
+# binary variable columns filled with zeros (this way we can preserve
+# the validity of results obtained from lm1). 
+
+# set necessary values for all predictors in the same order as 
+# mentioned in summary()
+surrender <- 0
+public_assist <- 0
+stray <- 1
+injured <- 0
+normal <- 1
+nurpre <- 0
+other <- 0
+
+# temporary value, will be changed throughout the loop below
+age_upon_intake <- NA
+
+# combine all values into a data frame
+predictors <- data.frame(surrender, public_assist, stray, injured, normal, nurpre, other, age_upon_intake)
+
+# vectors to store both sides of the confidence interval and means
+left_tail <- c()
+middle <- c()
+right_tail <- c()
+
+# all values of age relevant for the simulation
+age <- c(0.1, 0.5, 1, 2, 3, 5, 7, 10, 12, 15, 18, 20)
+
+
+# iterate through all values in the vector of age
+for (i in 1:length(age)){
+
+  # set the age value
+  predictors$age_upon_intake = i
+  
+  # vector to store 1,000 predictions with each value of "age"
+  temp <- c()
+  
+  # generate 1,000 sets of coefficients from your regression model
+  lm1.sim <- sim(lm1, n.sims=1000)
+  
+  for (i in 1:1000){
+    
+    # generate 1,000 predictions with each value of "age"
+    # since the values of the intercept are listed in "stray", we  
+    # multiply every coefficient value by each of the predictors
+    output <- sum(lm1.sim@coef[i]*predictors)
+      
+    # store 1000 predictions
+    temp <- append(temp, output)
+    
+  }
+  
+  # obtain 95% confidence intervals for each value of "age"
+  left_tail <- append(left_tail, quantile(temp, probs = 0.025))
+  right_tail <- append(right_tail, quantile(temp, probs = 0.975))
+  middle <- append(middle, mean(temp))
+}
+
+# merge confidence intervals with the vector of ages (convenient
+# for plotting)
+left_ci <- data.frame(age, left_tail)
+right_ci <- data.frame(age, right_tail)
+middle_ci <- data.frame(age, middle)
+
+columns <- c("Age_upon_intake", "Time_in_shelter")
+colnames(left_ci) <- columns
+colnames(right_ci) <- columns
+colnames(middle_ci) <- columns
+
+# plot confidence intervals (black lines) and mean values for 
+# every age (green line)
+ggplot()+
+  geom_line(data=left_ci, aes(x=Age_upon_intake, y = Time_in_shelter), color = "black") +
+  geom_line(data=middle_ci, aes(x=Age_upon_intake, y = Time_in_shelter), color = "green") +
+  geom_line(data=right_ci, aes(x=Age_upon_intake, y = Time_in_shelter), color = "black") +
+  xlab("Age upon intake (years)") +
+  ylab("Time in shelter (days)") +
+  ggtitle("Effect of age upon intake on the length of stay")
+
+```
+
+
+#### STEP 5
+
+Write a short paragraph with your reflections on this exercise: 
+
+1. What are the top 1-2 insights that the shelter can learn from your regression results and data visualization?
+
+**Regression results show which coefficients are statistically significant (listed above) and have an impact on the response variable (time spend in the shelter). The results make sense because dogs might need to spend more time in the shelter if it is surrendered or injured because it needs time to recover physically and mentally.**
+
+
+2. How does the prediction for length of stay changes with age, and how confident is that prediction?
+
+**According to the regression and confidence intervals simulation, age upon intake matters for determining how long dogs will stay in the shelter. Data visualization above suggests that the time spent in shelter increases as the dog's age upon intake increases. We can also notice that confidence intervals are more narrow when dogs are younger and wider when dogs are older. This might also be explained by an uneven distribution of values (e.g., age upon intake) in the dataset because it contains more entries with younger dogs than older ones (can be checked by obtaining means and medians of columns of interest). Nevertheless, we are 95% confident that the true effect of age upon the length of stay is represented within two black lines on the graph for every age.**
+
+
+## QUESTION 4: Different regressions in an RCT on the same set of data
+
+1. Answer the questions below after running [this code](tinyurl.com/yt4ml5ht)
+
+2. Which regression specification(s) correctly identifies the data generating process?
+
+**I think that regression specifications 1,2,3 and 5 correctly identify the data generating process because they use components present in the formula for ed2. On the other hand, specification 4 regresses variables that are not directly present in the formula for ed3. Moreover, I do not see the necessity of including "treat" twice in specification 4 (once as a distinct model component and once as a part of ed2).**
+
+3. Which regression specification(s) reliably estimate(s) the treatment effect?
+
+**Regression specification 5 reliably estimates the treatment effect because it includes not only main effects between the treatment and value of spend on education prior to the experiment but also the interaction between independent variables. This allows testing more hypotheses and obtaining more confident conclusions about the value of treatment and its impact on the outcomes.**
+
+4. What does the coefficient in the interaction term in lm5 imply? Is that implication accurate? 
+
+**The coefficient in the interaction term in lm5 implies that the impact of treatment on ed2 is different for different values of spend on education prior to the experiment (ed1). We can see in the summary of the model that the coefficient for the interaction term is approximately -0.02. This might mean that if there is a significant relationship between control units and spend on education for those units, the independent variable ed2 will decrease by -0.02 for every unit increase in ed1. However, the implication is not accurate because the p-value of the interaction term coefficient is not significant (~ 0.24).**
+
+5. Why does lm1 deliver the intercept that it does?
+
+**Since the algorithm makes "treat" equal to 0, there is one other component left in the formula — ed1. Thus, I think the value of the intercept roughly equals the mean of ed1. I do not think that the error term is included in the intercept value because its mean is 0.**
+
+6. Which is your favorite regression specification, and why, given whatever it is that you are trying to learn from the regression (which is up to you!)?  Which regression specification do you deem the worst, and why?
+
+**My favorite regression specification is the second one (lm2) because it helps to predict the amounts spent on education after running an RCT. I think it is the offers the easiest way to see the effect of treatment on the response variable without overfitting (overcomplicating) the model. Regression specification 4 (lm4) seems the worst because I do not understand the point of predicting the effect of treatment on ed3 by considering treatment separately and as a part of ed2 in the data-generating process.**
+
+
+## QUESTION 5: A Classification problem
+
+Beyond the time spent in the shelter, another important prediction question for the shelter is the outcome of the animal. Shelters typically measure themselves according to their ‘live release rate’: the fraction of animals with a live outcome out of all animals that arrived at the shelter. In this section, you’ll use similar features to predict a dog’s outcome, rather than the time spent at the shelter.
+
+For that purpose, you’ll have to create a new binary feature called `live_release`. We shall define live release as having all but the following `outcome_type` values: Died, Disposal, Euthanasia, Missing.
+
+You should maintain the same exclusions as the previous sections, since euthansia requests may (although this varies between shelters) not count towards the live release rate. If you’re wondering why, it’s because some euthanasia requests don’t actually have to end with euthanasia. Check how many of the 180 euthansia requests for dogs in this dataset were turned around. 
+
+
+#### STEP 1
+
+Create a `live_release` column based on the specification above. Then, choose any other feature in the dataset that you think might be interesting to include in the model, i.e., that you want to see whether it has any association with a dog’s live release chances. This may definitely include some additional feature engineering on your behalf (which can be as simple as choosing something like ‘black_color’ using the color feature). List your features here.
+
+**I decided to set my predictor in "sex_upon_intake" equal to the "neutered_male" value for the purpose of running logistic regression in the further steps. Since the "sex_upon_intake" column also contains other qualitative values that cannot be put on a scale (e.g., "neutered male" is not bigger/better than "intact female"), we need to perform one-hot encoding to make sure our regression model produces meaningful results. In order to achieve that, we will divide the "sex_upon_intake" column into multiple columns corresponding to each sex present in the dataset, where 0 means that a dog is not of the specified sex and 1 means that it is. Then we will add all columns to the regression model.**
+
+
+#### STEP 2
+
+This time, we want to also be able to see how good our predictions are on unseen data. While there are several variations of the k-fold cross-validation method, let’s stick with the simplest one where we just split randomly the dataset into a training and a testing (aka validation) set.
+
+Randomly select 80% of the data to be put in a training set and leave the rest for a test set.
+
+```{r}
+# create a dataset with a column that needs to be modified
+onehot_sex <- new2[6]
+
+# create dummy variables for each column
+dummy_sex <- dummyVars(" ~ .", data=onehot_sex)
+
+# perform one-hot encoding
+new3 <- data.frame(predict(dummy_sex, newdata = onehot_sex))
+
+# add newly obtained columns to the existing dataset
+new3 <- cbind(new2, new3)
+
+new3 <- clean_names(new3)
+
+####### create a "live release" feature   #######
+
+# duplicate any existing binary column and add it to the data frame
+live_release <- new3$intake_type_stray
+new3["live_release"] <- live_release
+
+# change "live_release" features to satisfy shelter interests
+for(i in 1:length(new3$live_release)){
+  if(new3$outcome_type[i] == "Died" | new3$outcome_type[i] == "Disposal" | new3$outcome_type[i] == "Euthanasia" 
+| new3$outcome_type[i] == "Missing"){
+    new3$live_release[i] <- 0
+  }
+  else{
+    new3$live_release[i] <- 1
+  }
+}
+
+# randomly select 80% of the data to be put in a training set
+train <- sample(1:nrow(new3), dim(new3)[1]*0.8)
+new3_train <- new3[train,]
+
+# leave the rest for a test set
+new3_test <- new3[-train,]
+
+```
+
+#### STEP 3
+
+Using your training set (only!), run a logistic regression, modeling `live_release` as a function of `intake_type`, `intake_condition`, and `age_upon_intake_years`, and your other features. Report and interpret the regression coefficient and 95% confidence intervals for `age_upon_intake`.
+
+```{r}
+# extend previous regression model by adding "sex_upon_intake" = "neutered_male" column
+glm.release <- glm(live_release ~ intake_type_owner_surrender + intake_type_public_assist + intake_type_stray + new_intake_condition_injured + new_intake_condition_normal + new_intake_condition_nur_pre + new_intake_condition_other + age_upon_intake_years + sex_upon_intake_neutered_male +0, data = new3_train, family = binomial)
+summary(glm.release)
+
+# calculate 95% confidence interval for "age_upon_intake" 
+# using standard error
+lower <- glm.release$coefficients[8] - 1.96*0.008555
+upper <- glm.release$coefficients[8] + 1.96*0.008555
+
+```
+**The regression coefficient for "age_upon_intake" is roughly equal to -0.1. This means that with every unit increase in age, live release decreases by -0.1, keeping all other variables constant. I think this coefficient is significant because its p-value is less than 0.05. We can calculate a 95% confidence interval by adding or subtracting 1.96 multiplied by the coefficient standard error to the coefficient value. The result is (-0.111, -0.0778), which captures the true mean.**
+
+
+#### STEP 4
+
+Use the logistic regression model to predict the live release outcomes on the test set. Start by using 0.5 as a threshold, and show your confusion matrix.
+
+```{r}
+# Your code here!
+predicted_vals <- predict(glm.release, newdata = new3_test, type="response")
+
+# create a new variable that is 0 for observations of 
+# predicted_Vals that are less than 0.5 and 1 otherwise.
+predicted_vals_binary <- ifelse(predicted_vals < 0.5, 0, 1)
+
+# show the values of the binary predicted outcome
+# (predicted_vals_binary) against the observed outcome
+# (new3_test$live_release)
+table(predicted_vals_binary, new3_test$live_release)
+
+# test set error rate (%) (surprisingly low)
+round((1 - mean(predicted_vals_binary == new3_test$live_release))*100, 2)
+
+```
+
+
+#### STEP 5
+
+Is it possible that another threshold will be better for this model? Try a few different ones and show one that results in better prediction performance (if none do, show one that gives a worse result). Justify your choice, explaining why the different error types made by changing the threshold is preferable to your previous result. 
+
+```{r}
+# vector of thresholds
+t = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+for (i in 1:9) {
+  predicted_vals_binary2 <- ifelse(predicted_vals < t[i], 0, 1)
+  print(round((1 - mean(predicted_vals_binary2 ==  new3_test$live_release))*100,2))
+}
+
+
+```
+**Threshold = 0.5 seems to be the best, and threshold = 0.9 seems to be the worst for this model. The error rate is still very low, which might be explained by a small number of "live_release" = 0 entries in the test set and in the whole dataset in general. If we take a look at the result of the predict() function, we will notice that most values there are above 0.9 and, thus, most of them are correctly classified without a significant impact of threshold on that. It is probably better to classify "live_release" as 0 when it is in fact 1 (not vice versa) in the context of this problem because it is more pleasant to find out that the dog is alive when it has been considered not alive. Thus, false positives (type 1 error) are preferable to false negatives.**
+
+#### STEP 6: Bonus Question
+
+Write code or use code from existing packages that you come across to create the ROC curve for this classification problem!
+
+```{r}
+# code obtained from https://rpubs.com/dtime/672367
+roc <- prediction(predictions = predicted_vals, labels = new3_test$live_release)
+roc_perf <- performance(roc , "tpr" , "fpr")
+plot(roc_perf, colorize = TRUE)
+
+```
+
+#### STEP 7
+
+Lastly, write a short summary (1-2 paragraphs) with your reflections on the exercise, including: 
+
+1. Reasoning for the choices you made in your feature selection.
+
+**The original dataset contained a few additional variables I was interested in exploring. However, "sex_upon_intake" stood out because I wanted to know whether it influences dogs' chances of live release. Moreover, many variables in the dataset are either unsuitable for performing regression analysis or require some manipulations (e.g., conversion, cleaning NA values after it was already done at the beginning of the assignment, etc.). Thus, "sex_upon_intake" seemed like a convenient choice. **
+
+2. What other variables might have been interesting to look at which are not available in the data.
+
+**It would be interesting to find out whether new owners who adopted dogs had any animals before. This way, we could run more models and hypothesize about the relationship between adoption and animal ownership. It would also be nice to know whether animals were immunized so that it is easier to conduct research about the impact of vaccinations on dog's health.**
+
+3. How good are your model’s predictions on the test set? What might explain it (that predictions are or are not highly accurate) and how could it be improved?
+
+**My model's predictions are surprisingly good (3-6% test error rate depending on the threshold choice). This might be explained by a very uneven ratio of units that had "live release" = 0 and "live release" = 1. Parameters that were put into the regression model were also suitable for making accurate predictions because most of the coefficients were statistically significant. It is difficult to imagine how the results could be improved further. Maybe we could use forward selection to obtain a maximum number of predictors that are statistically significant and helpful for classification.**
+
+
+# End of Assignment
+
+## Final Steps
+
+Before finalizing your project you'll want to be sure there are **comments in your code chunks** and **text outside of your code chunks** to explain what you're doing in each code chunk. These explanations are incredibly helpful for someone who doesn't code or someone unfamiliar to your project.
+
+You have two options for submission:
+
+1. You can complete this .rmd file, knit it to pdf and submit the resulting .pdf file on Forum.
+2. You can complete the Google Doc version of this assignment, include your code, graphs, results, and your explanations wherever necessary and download the Google Doc as a pdf file and submit the pdf file on Forum. If you choose this method, you need to make sure you will provide a link to an .R script file where your code can be found (you can host your code on Github or Google Drive). Note that links to Google Docs are not accepted as your final submission.
+
+
+### Knitting your R Markdown Document
+
+Last but not least, you'll want to **Knit your .Rmd document into a pdf document**. If you get an error, take a look at what the error says and edit your .Rmd document. Then, try to Knit again! Troubleshooting these error messages will teach you a lot about coding in R. If you get any error that doesn't make sense to you, post it on Piazza.
+
+
+Good Luck! The Teaching Team
